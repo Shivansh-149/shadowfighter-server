@@ -1,0 +1,9 @@
+{
+  "name": "shadowfighter-server",
+  "version": "1.0.0",
+  "description": "Matchmaking, 1v1 relay, coins and admin server for Shadow Fighter",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=16" },
+  "license": "MIT"
+}

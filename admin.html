@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shadow Fighter Admin</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, sans-serif; background: #0d0a1a; color: #eee; padding: 16px; }
+  h1 { color: #c080ff; margin: 0 0 4px; font-size: 26px; }
+  .sub { color: #9090c0; font-size: 13px; margin-bottom: 16px; }
+  .card { background: #181230; border: 1px solid #332a5a; border-radius: 12px; padding: 14px; margin-bottom: 14px; }
+  label { display: block; font-size: 13px; color: #aaa; margin: 8px 0 4px; }
+  input { width: 100%; padding: 10px; font-size: 16px; border-radius: 8px; border: 1px solid #443a6a; background: #0d0a1a; color: #fff; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  button { flex: 1 1 120px; padding: 12px; font-size: 15px; border: 0; border-radius: 8px; color: #fff; background: #3060c0; cursor: pointer; }
+  button.gold { background: #d08a10; }
+  button.green { background: #2a9050; }
+  #out { min-height: 48px; font-size: 16px; color: #ffe060; white-space: pre-wrap; word-break: break-word; }
+  .err { color: #ff8080 !important; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 6px 4px; border-bottom: 1px solid #2a2250; text-align: left; }
+  th { color: #9090c0; font-weight: normal; }
+  .id { font-family: monospace; color: #fff; }
+</style>
+</head>
+<body>
+<h1>Shadow Fighter Admin</h1>
+<div class="sub" id="srvinfo"></div>
+
+<div class="card">
+  <label>Admin key</label>
+  <input id="key" type="password" autocomplete="off" placeholder="the ADMIN_KEY shown when the server started">
+  <label>Player ID (6 digits)</label>
+  <input id="pid" inputmode="numeric" maxlength="6" placeholder="e.g. 472164">
+  <label>Amount (negative removes coins)</label>
+  <input id="amt" inputmode="numeric" placeholder="e.g. 500">
+  <div class="row">
+    <button onclick="view()">View player</button>
+    <button class="green" onclick="send('add')">Add coins</button>
+    <button class="gold" onclick="send('set')">Set coins</button>
+  </div>
+  <div id="out" style="margin-top:12px"></div>
+</div>
+
+<div class="card">
+  <div class="row" style="margin:0 0 8px"><button onclick="top()">Refresh top players</button></div>
+  <table><thead><tr><th>Name</th><th>ID</th><th>Coins</th><th>W/L</th></tr></thead><tbody id="rows"></tbody></table>
+</div>
+
+<script>
+var $ = function (id) { return document.getElementById(id); };
+$('key').value = localStorage.getItem('sf_admin_key') || '';
+$('srvinfo').textContent = 'Server: ' + location.origin;
+
+function setOut(t, bad) { $('out').textContent = t; $('out').className = bad ? 'err' : ''; }
+
+function api(method, path, body) {
+  var key = $('key').value.trim();
+  localStorage.setItem('sf_admin_key', key);
+  var opts = { method: method, headers: { 'x-admin-key': key, 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  return fetch(path, opts).then(function (r) {
+    return r.json().catch(function () { return { ok: false, error: 'HTTP ' + r.status }; });
+  }).then(function (j) {
+    if (!j.ok) throw new Error(j.error || 'failed');
+    return j;
+  });
+}
+
+function show(p, prefix) {
+  setOut((prefix || '') + p.name + '  (ID ' + p.id + ')\nCOINS: ' + p.coins + '\nWins ' + p.wins + '  Losses ' + p.losses);
+}
+
+function view() {
+  var id = $('pid').value.trim();
+  if (!id) return setOut('Enter a player ID', true);
+  api('GET', '/admin/player/' + id).then(function (j) { show(j.player); top(); })
+    .catch(function (e) { setOut(e.message, true); });
+}
+
+function send(mode) {
+  var id = $('pid').value.trim(), amount = parseInt($('amt').value, 10);
+  if (!id) return setOut('Enter a player ID', true);
+  if (isNaN(amount)) return setOut('Enter an amount', true);
+  if (mode === 'set' && !confirm('Set coins of ' + id + ' to ' + amount + '?')) return;
+  api('POST', '/admin/coins', { id: id, amount: amount, mode: mode }).then(function (j) {
+    show(j.player, mode === 'set' ? 'Coins set.\n' : 'Coins added.\n'); top();
+  }).catch(function (e) { setOut(e.message, true); });
+}
+
+function top() {
+  api('GET', '/admin/players').then(function (j) {
+    $('rows').innerHTML = '';
+    j.players.forEach(function (p) {
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td></td><td class="id"></td><td></td><td></td>';
+      tr.children[0].textContent = p.name;
+      tr.children[1].textContent = p.id;
+      tr.children[2].textContent = p.coins;
+      tr.children[3].textContent = p.wins + ' / ' + p.losses;
+      tr.style.cursor = 'pointer';
+      tr.onclick = function () { $('pid').value = p.id; view(); };
+      $('rows').appendChild(tr);
+    });
+  }).catch(function (e) { setOut(e.message, true); });
+}
+</script>
+</body>
+</html>
