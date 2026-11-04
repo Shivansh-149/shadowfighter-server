@@ -173,6 +173,13 @@ function readBody(req) {
 }
 function cleanName(n) { return String(n || 'Fighter').replace(/[^\w \-]/g, '').trim().slice(0, 14) || 'Fighter'; }
 
+const lastSeen = new Map();
+function adminDetail(dp) {
+  const now = Date.now();
+  const status = inMatch.has(dp.id) ? 'in match' : queue.has(dp.id) ? 'searching' : (now - (lastSeen.get(dp.id) || 0) < 90000 ? 'online' : 'offline');
+  return { id: dp.id, name: dp.name, coins: dp.coins, wins: dp.wins, losses: dp.losses, created: dp.created || 0,
+           gemsPending: dp.gemsPending || 0, gemsSent: dp.gemsSent || 0, status, lastSeen: lastSeen.get(dp.id) || 0 };
+}
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const route = req.method + ' ' + url.pathname;
@@ -196,6 +203,20 @@ const server = http.createServer(async (req, res) => {
       if (m && req.method === 'GET') {
         const p = db.players[m[1]]; if (!p) return send(res, 404, { ok: false, error: 'no such player id' });
         return send(res, 200, { ok: true, player: pub(p) });
+      }
+      const dm = url.pathname.match(/^\/admin\/detail\/(\d+)$/);
+      if (dm && req.method === 'GET') {
+        const dp = db.players[dm[1]]; if (!dp) return send(res, 404, { ok: false, error: 'no such player id' });
+        return send(res, 200, { ok: true, player: adminDetail(dp) });
+      }
+      if (route === 'POST /admin/gems') {
+        const gb = await readBody(req); const gp = db.players[String(gb.id)];
+        if (!gp) return send(res, 404, { ok: false, error: 'no such player id' });
+        const amt = Math.trunc(Number(gb.amount));
+        if (!isFinite(amt) || amt < 1 || amt > 1000000) return send(res, 400, { ok: false, error: 'bad amount (1 - 1000000)' });
+        gp.gemsPending = (gp.gemsPending || 0) + amt; gp.gemsSent = (gp.gemsSent || 0) + amt;
+        save(); console.log('[admin] gems', gp.id, '+' + amt);
+        return send(res, 200, { ok: true, player: adminDetail(gp) });
       }
       if (route === 'POST /admin/coins') {
         const b = await readBody(req); const p = db.players[String(b.id)];
@@ -221,7 +242,25 @@ const server = http.createServer(async (req, res) => {
     const p = auth(b.id, b.token);
     if (!p) return send(res, 401, { ok: false, error: 'unknown player' });
 
+    lastSeen.set(p.id, Date.now());
     switch (url.pathname) {
+      case '/api/friends': {
+        const ids = Array.isArray(b.ids) ? b.ids.slice(0, 50) : [];
+        const now = Date.now(); const out = [];
+        for (const raw of ids) {
+          const fid = String(raw);
+          if (!/^\d{1,10}$/.test(fid)) continue;
+          const fp = db.players[fid]; if (!fp) continue;
+          const st = inMatch.has(fid) ? 'match' : queue.has(fid) ? 'queue' : (now - (lastSeen.get(fid) || 0) < 90000 ? 'online' : 'offline');
+          out.push({ id: fp.id, name: fp.name, wins: fp.wins, losses: fp.losses, status: st });
+        }
+        return send(res, 200, { ok: true, friends: out });
+      }
+      case '/api/claimgems': {
+        const g = p.gemsPending || 0;
+        if (g > 0) { p.gemsPending = 0; save(); }
+        return send(res, 200, { ok: true, gems: g });
+      }
       case '/api/me': return send(res, 200, { ok: true, ...pub(p) });
       case '/api/rename': p.name = cleanName(b.name); save(); return send(res, 200, { ok: true, ...pub(p) });
       case '/api/queue':
