@@ -2,3 +2,4 @@ node_modules
 data.json
 data.json.tmp
 .admin_key
+admin_key.txt
