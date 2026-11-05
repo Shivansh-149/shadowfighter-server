@@ -29,7 +29,7 @@ function safeEq(a, b) {
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
 function auth(id, token) { const p = db.players[String(id)]; return p && safeEq(p.token, token || '') ? p : null; }
-function pub(p) { return { id: p.id, name: p.name, coins: p.coins, gems: (p.gems || 0) + (p.gemsPending || 0), wins: p.wins, losses: p.losses }; }
+function pub(p) { return { avatar: (p.avatar | 0), banner: (p.banner | 0), id: p.id, name: p.name, coins: p.coins, gems: (p.gems || 0) + (p.gemsPending || 0), wins: p.wins, losses: p.losses }; }
 function num(v, d, lo, hi) { v = Number(v); if (!isFinite(v)) return d; return Math.max(lo, Math.min(hi, v)); }
 
 // ---------------- matchmaking ----------------
@@ -149,7 +149,7 @@ function handleSync(p, body) {
   const opp = db.players[m.players[1 - side]];
   const out = {
     side, round: m.round, phase: m.phase, w: [m.wins[side], m.wins[1 - side]],
-    opp: { id: opp ? opp.id : '?', name: opp ? opp.name : '?', ch: m.ch[1 - side] },
+    opp: { id: opp ? opp.id : '?', name: opp ? opp.name : '?', avatar: opp ? (opp.avatar | 0) : 0, banner: opp ? (opp.banner | 0) : 0, ch: m.ch[1 - side] },
     os: m.st[1 - side], ev: m.ev[side].splice(0), winner: m.phase === 'roundend' ? (m.lastWinner < 0 ? -1 : (m.lastWinner === side ? 1 : 0)) : -1
   };
   if (m.phase === 'fight') out.t = Math.max(0, ROUND_SEC - (now - m.pt) / 1000);
@@ -258,6 +258,14 @@ const server = http.createServer(async (req, res) => {
     function gxBal(pl) { return { coins: pl.coins || 0, gems: gxGems(pl) }; }
     function gxOnline(id) { return inMatch.has(id) || queue.has(id) || (typeof lastSeen !== 'undefined' && Date.now() - (lastSeen.get(id) || 0) < 90000); }
     switch (url.pathname) {
+      // PROFILE_FIX
+      case '/api/profile': {
+        p.avatar = Math.max(0, Math.min(7, Math.floor(Number(b.avatar)) || 0));
+        p.banner = Math.max(0, Math.min(5, Math.floor(Number(b.banner)) || 0));
+        save();
+        return send(res, 200, { ok: true, avatar: p.avatar, banner: p.banner });
+      }
+
       // GEMS_FIX cases
       case '/api/me':
         return send(res, 200, { ok: true, ...pub(p), gems: gxGems(p) });
@@ -328,7 +336,7 @@ const server = http.createServer(async (req, res) => {
           if (!/^\d{1,10}$/.test(fid)) continue;
           const fp = db.players[fid]; if (!fp) continue;
           const st = inMatch.has(fid) ? 'match' : queue.has(fid) ? 'queue' : (now - (lastSeen.get(fid) || 0) < 90000 ? 'online' : 'offline');
-          out.push({ id: fp.id, name: fp.name, wins: fp.wins, losses: fp.losses, status: st });
+          out.push({ id: fp.id, name: fp.name, avatar: (fp.avatar | 0), banner: (fp.banner | 0), wins: fp.wins, losses: fp.losses, status: st });
         }
         return send(res, 200, { ok: true, friends: out });
       }
